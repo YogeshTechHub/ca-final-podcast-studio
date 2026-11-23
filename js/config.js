@@ -95,7 +95,37 @@ const APP_CONFIG = {
       id: "demo_web_speech",
       name: "Browser Speech Demo",
       badge: "Offline / Instant Test",
-      description: "Uses local browser voices. Zero API key needed - instant preview & waveform testing in 5 seconds."
+      description: "Uses local browser voices. Zero API key needed - instant preview & waveform testing in 5 seconds.",
+      voices: {
+        speaker1: {
+          name: "Meena (Student)",
+          gender: "FEMALE",
+          preferredVoices: [
+            "Microsoft Neerja Online (Natural) - English (India)",
+            "Microsoft Heera",
+            "Google हिन्दी",
+            "Veena",
+            "ta-IN",
+            "en-IN"
+          ],
+          pitch: 1.12,
+          rate: 1.04
+        },
+        speaker2: {
+          name: "Anna / Mentor",
+          gender: "MALE",
+          preferredVoices: [
+            "Microsoft Prabhat Online (Natural) - English (India)",
+            "Microsoft Ravi",
+            "Google US English",
+            "Rishi",
+            "ta-IN",
+            "en-IN"
+          ],
+          pitch: 0.92,
+          rate: 0.98
+        }
+      }
     }
   },
 

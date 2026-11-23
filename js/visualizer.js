@@ -40,6 +40,7 @@ class AudioPlayerVisualizer {
   loadBuffer(audioBuffer, timeline = []) {
     this.audioBuffer = audioBuffer;
     this.timeline = timeline;
+    this._resizeCanvas();
     this._computePeaks();
     this.draw();
   }
@@ -61,10 +62,12 @@ class AudioPlayerVisualizer {
     });
 
     // Audio timeupdate
-    this.audio.addEventListener('timeupdate', () => {
-      this.draw();
-      this._updateActiveTurn();
-    });
+    if (this.audio) {
+      this.audio.addEventListener('timeupdate', () => {
+        this.draw();
+        this._updateActiveTurn();
+      });
+    }
 
     // Resize observer for responsive canvas
     window.addEventListener('resize', () => {
@@ -79,21 +82,27 @@ class AudioPlayerVisualizer {
   _resizeCanvas() {
     if (!this.canvas) return;
     const rect = this.canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = (rect.width || 600) * dpr;
-    this.canvas.height = (rect.height || 100) * dpr;
-    if (this.ctx) {
-      this.ctx.scale(dpr, dpr);
+    const width = rect.width || this.canvas.clientWidth || 600;
+    const height = rect.height || this.canvas.clientHeight || 100;
+    if (width > 0 && height > 0) {
+      const dpr = window.devicePixelRatio || 1;
+      this.canvas.width = width * dpr;
+      this.canvas.height = height * dpr;
+      if (this.ctx) {
+        this.ctx.scale(dpr, dpr);
+      }
     }
   }
 
   _computePeaks() {
-    if (!this.audioBuffer || !this.canvas) return;
+    if (!this.audioBuffer || !this.canvas || this.audioBuffer.numberOfChannels === 0) return;
     const channelData = this.audioBuffer.getChannelData(0);
+    if (!channelData || channelData.length === 0) return;
+
     const rect = this.canvas.getBoundingClientRect();
-    const width = rect.width || 600;
-    const totalBars = Math.floor(width / (this.options.barWidth + this.options.barGap));
-    const step = Math.floor(channelData.length / totalBars);
+    const width = rect.width || this.canvas.clientWidth || 600;
+    const totalBars = Math.max(1, Math.floor(width / (this.options.barWidth + this.options.barGap)));
+    const step = Math.max(1, Math.floor(channelData.length / totalBars));
 
     this.peaks = [];
     for (let i = 0; i < totalBars; i++) {
@@ -170,8 +179,9 @@ class AudioPlayerVisualizer {
   }
 
   _handleScrub(event) {
-    if (!this.canvas || !this.audio || !this.audio.duration) return;
+    if (!this.canvas || !this.audio || !this.audio.duration || isNaN(this.audio.duration)) return;
     const rect = this.canvas.getBoundingClientRect();
+    if (!rect.width) return;
     const clientX = event.clientX;
     const offsetX = Math.max(0, Math.min(rect.width, clientX - rect.left));
     const ratio = offsetX / rect.width;
