@@ -167,11 +167,12 @@ class StorageManager {
   // =========================================================================
   static getSettings() {
     const keys = window.APP_CONFIG.STORAGE_KEYS;
+    const defaults = window.APP_CONFIG.DEFAULT_CREDENTIALS || {};
     return {
-      gcpApiKey: localStorage.getItem(keys.API_KEY_GCP) || "",
+      gcpApiKey: localStorage.getItem(keys.API_KEY_GCP) || defaults.GCP_API_KEY || "",
       hfParlerUrl: localStorage.getItem(keys.HF_SPACE_PARLER_URL) || window.APP_CONFIG.ENGINES.ENGINE_2_HF_PARLER.defaultSpaceUrl,
       hfIndicTTSUrl: localStorage.getItem(keys.HF_SPACE_INDICTTS_URL) || window.APP_CONFIG.ENGINES.ENGINE_3_HF_INDICTTS.defaultSpaceUrl,
-      hfToken: localStorage.getItem(keys.HF_TOKEN) || "",
+      hfToken: localStorage.getItem(keys.HF_TOKEN) || defaults.HF_TOKEN || "",
       appsScriptUrl: localStorage.getItem(keys.GOOGLE_APPS_SCRIPT_URL) || "",
       activeEngine: localStorage.getItem(keys.ACTIVE_ENGINE) || "demo_web_speech",
       activeMode: localStorage.getItem(keys.ACTIVE_MODE) || "two-speaker",

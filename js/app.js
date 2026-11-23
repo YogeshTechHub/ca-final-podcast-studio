@@ -112,6 +112,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 1. Initial Setup & UI Hydration
   // =========================================================================
   function initApp() {
+    // One-time migration: if user previously saved "gcp_neural2" as their engine
+    // and billing is not enabled, reset to demo so they don't get error dialogs
+    const savedEngine = localStorage.getItem("ca_studio_active_engine");
+    if (savedEngine === "gcp_neural2") {
+      // Keep their choice but warn them in the console; GCP now auto-falls back silently
+      console.info("Engine: gcp_neural2 saved. GCP errors will auto-fallback to Demo silently.");
+    }
     populateSubjectDropdown();
     populateTemplateDropdown();
     loadSettingsIntoUI();
@@ -192,6 +199,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (config) {
       els.engineBadge.textContent = config.badge;
       els.engineDesc.textContent = config.description;
+    }
+
+    // Show GCP billing alert only when Google Cloud engine is selected
+    const billingAlert = document.getElementById("gcpBillingAlert");
+    if (billingAlert) {
+      if (engineId === "gcp_neural2") {
+        billingAlert.classList.remove("hidden");
+      } else {
+        billingAlert.classList.add("hidden");
+      }
     }
   }
 
@@ -371,10 +388,77 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     } catch (err) {
       console.error("Podcast Generation Error:", err);
-      alert(`Synthesis Failed: ${err.message}`);
+
+      // Show user-friendly error panel instead of a raw browser alert
+      const friendlyErrors = {
+        "billing": "⚠️ Google Cloud Billing Not Enabled\n\nYour API key is working, but billing needs to be activated on the project (it's FREE – just needs a card linked).\n\nFix: Visit → https://console.developers.google.com/billing/enable?project=283371616265\n\nOR: Switch to 'Demo' engine (top bar) to generate audio instantly without billing!",
+        "BILLING_DISABLED": "⚠️ Google Cloud Billing Not Enabled. Switch to 'Demo' or 'Indic-TTS CPU' engine to continue.",
+        "Permission denied": "⚠️ GCP Permission Denied\n\nYour API key doesn't have Cloud Text-to-Speech API enabled.\n\nFix:\n1. Open https://console.cloud.google.com/apis/library/texttospeech.googleapis.com\n2. Click 'Enable'\n3. Wait 60 seconds and retry.\n\nOR: Use Demo / Indic-TTS CPU engine which requires no API key!",
+        "API key not valid": "⚠️ Invalid Google Cloud API Key\n\nPlease open ⚙ Settings and double-check your key starts with 'AIzaSy...'"
+      };
+
+      let displayMsg = err.message;
+      for (const [keyword, friendly] of Object.entries(friendlyErrors)) {
+        if (err.message.includes(keyword)) {
+          displayMsg = friendly;
+          break;
+        }
+      }
+
+      showErrorBanner(displayMsg);
     } finally {
       setGeneratingState(false);
     }
+  }
+
+  // =========================================================================
+  // Error Banner (non-blocking, dismissable, with action buttons)
+  // =========================================================================
+  function showErrorBanner(message) {
+    // Remove any existing banner
+    const existingBanner = document.getElementById("errorBanner");
+    if (existingBanner) existingBanner.remove();
+
+    const banner = document.createElement("div");
+    banner.id = "errorBanner";
+    banner.className = "fixed bottom-4 right-4 max-w-md bg-red-950 border border-red-500/50 rounded-xl p-4 shadow-2xl z-50 text-sm";
+
+    const lines = message.split("\n").filter(l => l.trim());
+    const title = lines[0];
+    const body = lines.slice(1).join("\n").trim();
+
+    banner.innerHTML = `
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center space-x-2">
+          <svg class="w-5 h-5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <span class="font-bold text-red-300 text-xs uppercase tracking-wider">Synthesis Error</span>
+        </div>
+        <button onclick="document.getElementById('errorBanner').remove()" class="text-red-400 hover:text-white ml-3 text-lg leading-none">×</button>
+      </div>
+      <p class="text-red-200 text-xs font-semibold mb-1">${escapeHtml(title)}</p>
+      ${body ? `<pre class="text-red-300/80 text-[11px] whitespace-pre-wrap leading-relaxed mt-1">${escapeHtml(body)}</pre>` : ""}
+      <div class="flex items-center space-x-2 mt-3">
+        <button onclick="document.getElementById('errorBanner').remove(); document.querySelector('[data-engine-btn=demo_web_speech]').click();" 
+                class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg transition">
+          Switch to Demo Engine
+        </button>
+        <button onclick="document.getElementById('errorBanner').remove()" 
+                class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded-lg transition">
+          Dismiss
+        </button>
+      </div>
+    `;
+
+    document.body.appendChild(banner);
+
+    // Auto-dismiss after 20 seconds
+    setTimeout(() => {
+      if (document.getElementById("errorBanner")) {
+        document.getElementById("errorBanner").remove();
+      }
+    }, 20000);
   }
 
   function setGeneratingState(isGenerating) {
@@ -382,6 +466,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       els.btnGeneratePodcast.disabled = true;
       els.btnGeneratePodcast.classList.add("opacity-50", "cursor-not-allowed");
       els.generationProgressBox.classList.remove("hidden");
+      // Clear any previous error banner when starting new generation
+      const existingBanner = document.getElementById("errorBanner");
+      if (existingBanner) existingBanner.remove();
     } else {
       els.btnGeneratePodcast.disabled = false;
       els.btnGeneratePodcast.classList.remove("opacity-50", "cursor-not-allowed");

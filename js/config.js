@@ -9,6 +9,10 @@ const APP_CONFIG = {
   DEFAULT_SAMPLE_RATE: 24000,
   DEFAULT_PAUSE_MS: 400, // pause between speaker turns
   DEFAULT_SOLO_PAUSE_MS: 250, // pause between paragraph chunks in solo mode
+  DEFAULT_CREDENTIALS: {
+    GCP_API_KEY: "",
+    HF_TOKEN: ""
+  },
   STORAGE_KEYS: {
     API_KEY_GCP: "ca_studio_gcp_api_key",
     HF_SPACE_PARLER_URL: "ca_studio_hf_parler_url",
