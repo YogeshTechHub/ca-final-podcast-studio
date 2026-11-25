@@ -91,13 +91,19 @@ class WavEncoder {
    */
   static blobToBase64(blob) {
     return new Promise((resolve, reject) => {
+      if (!blob) {
+        return resolve("");
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
+        if (!reader.result || typeof reader.result !== "string") {
+          return resolve("");
+        }
         // Strip data:audio/wav;base64, prefix
-        const base64 = reader.result.split(',')[1];
+        const base64 = reader.result.split(',')[1] || "";
         resolve(base64);
       };
-      reader.onerror = reject;
+      reader.onerror = (err) => reject(err || new Error("Failed to convert Blob to Base64"));
       reader.readAsDataURL(blob);
     });
   }

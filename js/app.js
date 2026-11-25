@@ -27,6 +27,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     currentTimeline: [],
     currentTrackId: null,
     isPlaying: false,
+    liveSpeechMode: false,
+    liveTurnIndex: 0,
+    liveSpeechSessionId: 0,
+    playbackSpeed: 1.0,
+    voice1Name: "",
+    voice2Name: "",
     pauseMs: StorageManager.getSettings().pauseMs,
     sampleRate: StorageManager.getSettings().sampleRate
   };
@@ -41,6 +47,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     modeSingleSpeakerBtn: document.getElementById("modeSingleSpeakerBtn"),
     soloVoiceOptions: document.getElementById("soloVoiceOptions"),
     soloVoiceSelect: document.getElementById("soloVoiceSelect"),
+    browserVoiceBar: document.getElementById("browserVoiceBar"),
+    voiceSelect1: document.getElementById("voiceSelect1"),
+    voiceSelect2: document.getElementById("voiceSelect2"),
+    btnTestVoices: document.getElementById("btnTestVoices"),
+    btnGenerateLabel: document.getElementById("btnGenerateLabel"),
+    nowSpeakingBox: document.getElementById("nowSpeakingBox"),
+    nowSpeakingRole: document.getElementById("nowSpeakingRole"),
+    nowSpeakingTurnNum: document.getElementById("nowSpeakingTurnNum"),
+    nowSpeakingText: document.getElementById("nowSpeakingText"),
 
     // Script & Subject Selectors
     subjectSelect: document.getElementById("subjectSelect"),
@@ -112,21 +127,42 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 1. Initial Setup & UI Hydration
   // =========================================================================
   function initApp() {
-    // One-time migration: if user previously saved "gcp_neural2" as their engine
-    // and billing is not enabled, reset to demo so they don't get error dialogs
-    const savedEngine = localStorage.getItem("ca_studio_active_engine");
-    if (savedEngine === "gcp_neural2") {
-      // Keep their choice but warn them in the console; GCP now auto-falls back silently
-      console.info("Engine: gcp_neural2 saved. GCP errors will auto-fallback to Demo silently.");
-    }
     populateSubjectDropdown();
     populateTemplateDropdown();
     loadSettingsIntoUI();
+    populateBrowserVoices();
+    if (window.speechSynthesis && window.speechSynthesis.addEventListener) {
+      window.speechSynthesis.addEventListener("voiceschanged", populateBrowserVoices);
+    }
     applyActiveEngine(state.activeEngine);
     applyActiveMode(state.activeMode);
     loadDefaultTemplate();
     renderHistoryTable();
     updateScriptMetrics();
+  }
+
+  function populateBrowserVoices() {
+    if (!els.voiceSelect1 || !els.voiceSelect2 || typeof engineManager.getSortedWebVoices !== "function") return;
+    const voices = engineManager.getSortedWebVoices();
+    if (!voices || voices.length === 0) {
+      els.voiceSelect1.innerHTML = `<option value="">Default Browser Voice</option>`;
+      els.voiceSelect2.innerHTML = `<option value="">Default Browser Voice</option>`;
+      return;
+    }
+
+    const best1 = engineManager.findBestWebVoice("speaker1", "English");
+    const best2 = engineManager.findBestWebVoice("speaker2", "English");
+
+    const buildOptions = (selectedVoice) => voices.map(v => {
+      const sel = selectedVoice && v.name === selectedVoice.name ? "selected" : "";
+      const tag = v.lang ? ` [${v.lang}]` : "";
+      return `<option value="${escapeHtml(v.name)}" ${sel}>${escapeHtml(v.name)}${escapeHtml(tag)}</option>`;
+    }).join("");
+
+    els.voiceSelect1.innerHTML = buildOptions(best1);
+    els.voiceSelect2.innerHTML = buildOptions(best2);
+    state.voice1Name = els.voiceSelect1.value;
+    state.voice2Name = els.voiceSelect2.value;
   }
 
   function populateSubjectDropdown() {
@@ -209,6 +245,20 @@ document.addEventListener("DOMContentLoaded", async () => {
       } else {
         billingAlert.classList.add("hidden");
       }
+    }
+
+    // Show Browser Voice Casting Bar & update Generate button label
+    if (els.browserVoiceBar) {
+      if (engineId === "demo_web_speech") {
+        els.browserVoiceBar.classList.remove("hidden");
+      } else {
+        els.browserVoiceBar.classList.add("hidden");
+      }
+    }
+    if (els.btnGenerateLabel) {
+      els.btnGenerateLabel.textContent = engineId === "demo_web_speech"
+        ? "Generate & Play Live Browser Podcast"
+        : "Synthesize & Stitch Master Podcast (.WAV)";
     }
   }
 
@@ -323,6 +373,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       alert("Please add script dialogue before generating podcast.");
       return;
     }
+
+    // Stop any active audio or live speech
+    stopAllPlayback();
+
+    // If Browser Voices (Free) is selected, use real Web Speech API multi-speaker playback!
+    if (state.activeEngine === "demo_web_speech") {
+      await startLiveBrowserPodcast();
+      return;
+    }
+
+    state.liveSpeechMode = false;
 
     // Set UI to Generating State
     setGeneratingState(true);
@@ -440,9 +501,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       <p class="text-red-200 text-xs font-semibold mb-1">${escapeHtml(title)}</p>
       ${body ? `<pre class="text-red-300/80 text-[11px] whitespace-pre-wrap leading-relaxed mt-1">${escapeHtml(body)}</pre>` : ""}
       <div class="flex items-center space-x-2 mt-3">
-        <button onclick="document.getElementById('errorBanner').remove(); document.querySelector('[data-engine-btn=demo_web_speech]').click();" 
-                class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg transition">
-          Switch to Demo Engine
+        <button onclick="document.getElementById('errorBanner').remove(); document.querySelector('[data-engine-btn=demo_web_speech]').click(); document.getElementById('btnGeneratePodcast').click();" 
+                class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition">
+          ▶ Play with Browser Voices (Free)
         </button>
         <button onclick="document.getElementById('errorBanner').remove()" 
                 class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded-lg transition">
@@ -484,10 +545,138 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // =========================================================================
-  // 5. Audio Player Controls
+  // 5. Audio Player & Live Browser Speech Controls
   // =========================================================================
-  async function playAudio() {
+  function stopAllPlayback() {
+    state.liveSpeechSessionId++;
+    state.isPlaying = false;
+    if (typeof engineManager.cancelWebSpeech === "function") {
+      engineManager.cancelWebSpeech();
+    }
+    if (els.audioPlayer && !els.audioPlayer.paused) {
+      els.audioPlayer.pause();
+    }
+    updatePlayPauseButton(false);
+    if (els.nowSpeakingBox) els.nowSpeakingBox.classList.add("hidden");
+  }
+
+  async function startLiveBrowserPodcast() {
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      showErrorBanner("Your browser does not support Web Speech Synthesis. Please open in Chrome or Edge.");
+      return;
+    }
+
+    state.liveSpeechMode = true;
+    state.liveTurnIndex = 0;
+    state.currentMasterBuffer = null;
+    state.currentMasterBlob = null;
+
+    // Compute estimated timeline for waveform & progress display
+    const pauseSec = Math.max(0, state.pauseMs / 1000);
+    let offset = 0;
+    const timeline = state.parsedTurns.map((turn, idx) => {
+      const words = (turn.processedText || turn.rawText || "").split(/\s+/).filter(Boolean).length;
+      const dur = Math.max(1.5, words / 2.3);
+      const startTime = offset;
+      const endTime = startTime + dur;
+      offset = endTime + (idx < state.parsedTurns.length - 1 ? pauseSec : 0);
+      return { turnId: turn.id, speaker: turn.speaker, role: turn.role, text: turn.rawText, startTime, endTime, duration: dur };
+    });
+    state.currentTimeline = timeline;
+    const totalDur = Math.max(1, offset);
+
+    // Draw a visual speech-envelope preview on the waveform canvas (not played as audio!)
     try {
+      const sr = 8000;
+      const previewCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, Math.floor(totalDur * sr), sr);
+      const previewBuf = previewCtx.createBuffer(1, Math.floor(totalDur * sr), sr);
+      const data = previewBuf.getChannelData(0);
+      timeline.forEach((seg, sIdx) => {
+        const sStart = Math.floor(seg.startTime * sr);
+        const sEnd = Math.min(data.length, Math.floor(seg.endTime * sr));
+        for (let k = sStart; k < sEnd; k++) {
+          const env = Math.sin(((k - sStart) / Math.max(1, sEnd - sStart)) * Math.PI);
+          data[k] = env * (0.35 + 0.45 * Math.abs(Math.sin(k * 0.015 + sIdx)));
+        }
+      });
+      visualizer.loadBuffer(previewBuf, timeline);
+    } catch (e) {
+      console.warn("Waveform preview render skipped:", e);
+    }
+
+    els.playerSection.classList.remove("opacity-50", "pointer-events-none");
+    updateTotalDuration(totalDur);
+    els.currentTimeDisplay.textContent = "0:00";
+    els.syncStatusBadge.textContent = "Live Browser Voices (Free)";
+    els.syncStatusBadge.className = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+
+    await playLiveSpeechFromTurn(0);
+  }
+
+  async function playLiveSpeechFromTurn(startIndex) {
+    const sessionId = ++state.liveSpeechSessionId;
+    state.isPlaying = true;
+    updatePlayPauseButton(true);
+
+    for (let i = startIndex; i < state.parsedTurns.length; i++) {
+      if (sessionId !== state.liveSpeechSessionId || !state.isPlaying) return;
+
+      state.liveTurnIndex = i;
+      const turn = state.parsedTurns[i];
+      const seg = state.currentTimeline[i];
+
+      highlightActiveTurn(turn.id);
+      updateNowSpeakingUI(turn, i + 1, state.parsedTurns.length);
+      if (seg) {
+        els.currentTimeDisplay.textContent = formatTime(seg.startTime);
+      }
+
+      const selectedVoice = turn.speaker === "speaker1"
+        ? (els.voiceSelect1 ? els.voiceSelect1.value : state.voice1Name)
+        : (els.voiceSelect2 ? els.voiceSelect2.value : state.voice2Name);
+
+      const textToSpeak = turn.processedText || turn.rawText;
+      const result = await engineManager.speakWebSpeech(textToSpeak, turn.speaker, {
+        voiceName: selectedVoice,
+        speedMultiplier: state.playbackSpeed
+      });
+
+      if (sessionId !== state.liveSpeechSessionId || !state.isPlaying || result?.canceled) {
+        return;
+      }
+
+      // Natural pause between turns
+      if (i < state.parsedTurns.length - 1 && state.pauseMs > 0) {
+        await new Promise(r => setTimeout(r, Math.round(state.pauseMs / state.playbackSpeed)));
+      }
+    }
+
+    if (sessionId === state.liveSpeechSessionId) {
+      state.isPlaying = false;
+      state.liveTurnIndex = 0;
+      updatePlayPauseButton(false);
+      highlightActiveTurn(null);
+      if (els.nowSpeakingBox) els.nowSpeakingBox.classList.add("hidden");
+    }
+  }
+
+  function updateNowSpeakingUI(turn, currentNum, totalNum) {
+    if (!els.nowSpeakingBox) return;
+    els.nowSpeakingBox.classList.remove("hidden");
+    const isSpk1 = turn.speaker === "speaker1";
+    els.nowSpeakingRole.textContent = turn.isRecap ? "Fast Recap" : (isSpk1 ? "Student (Meena)" : "Mentor (Anna)");
+    els.nowSpeakingRole.className = `text-[10px] font-bold uppercase tracking-wider ${turn.isRecap ? "text-amber-400" : (isSpk1 ? "text-pink-400" : "text-blue-400")}`;
+    els.nowSpeakingTurnNum.textContent = `Turn ${currentNum}/${totalNum}`;
+    els.nowSpeakingText.textContent = turn.rawText;
+  }
+
+  async function playAudio() {
+    if (state.liveSpeechMode) {
+      await playLiveSpeechFromTurn(state.liveTurnIndex || 0);
+      return;
+    }
+    try {
+      await stitcher.ensureAudioContext();
       await els.audioPlayer.play();
       state.isPlaying = true;
       updatePlayPauseButton(true);
@@ -497,6 +686,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function pauseAudio() {
+    if (state.liveSpeechMode) {
+      state.liveSpeechSessionId++;
+      state.isPlaying = false;
+      engineManager.cancelWebSpeech();
+      updatePlayPauseButton(false);
+      return;
+    }
     els.audioPlayer.pause();
     state.isPlaying = false;
     updatePlayPauseButton(false);
@@ -787,14 +983,60 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Generation Trigger
   els.btnGeneratePodcast.addEventListener("click", generatePodcast);
 
+  // Voice Testing & Selection
+  if (els.btnTestVoices) {
+    els.btnTestVoices.addEventListener("click", async () => {
+      stopAllPlayback();
+      const v1 = els.voiceSelect1 ? els.voiceSelect1.value : "";
+      const v2 = els.voiceSelect2 ? els.voiceSelect2.value : "";
+      await engineManager.speakWebSpeech("Hi Anna, ready for CA Final revision!", "speaker1", { voiceName: v1 });
+      await engineManager.speakWebSpeech("Yes Meena, let's master this topic step by step.", "speaker2", { voiceName: v2 });
+    });
+  }
+  if (els.voiceSelect1) {
+    els.voiceSelect1.addEventListener("change", (e) => { state.voice1Name = e.target.value; });
+  }
+  if (els.voiceSelect2) {
+    els.voiceSelect2.addEventListener("change", (e) => { state.voice2Name = e.target.value; });
+  }
+
+  // Click any turn card to jump playback directly to that turn
+  els.turnPreviewContainer.addEventListener("click", (e) => {
+    const card = e.target.closest(".turn-card");
+    if (!card || !state.liveSpeechMode) return;
+    const cards = Array.from(els.turnPreviewContainer.querySelectorAll(".turn-card"));
+    const idx = cards.indexOf(card);
+    if (idx >= 0) {
+      stopAllPlayback();
+      playLiveSpeechFromTurn(idx);
+    }
+  });
+
   // Player Controls
   els.btnPlayPause.addEventListener("click", togglePlayPause);
-  els.btnSkipBack.addEventListener("click", () => visualizer.jump(-10));
-  els.btnSkipForward.addEventListener("click", () => visualizer.jump(10));
+  els.btnSkipBack.addEventListener("click", () => {
+    if (state.liveSpeechMode) {
+      const target = Math.max(0, state.liveTurnIndex - 1);
+      stopAllPlayback();
+      playLiveSpeechFromTurn(target);
+    } else {
+      visualizer.jump(-10);
+    }
+  });
+  els.btnSkipForward.addEventListener("click", () => {
+    if (state.liveSpeechMode) {
+      const target = Math.min(state.parsedTurns.length - 1, state.liveTurnIndex + 1);
+      stopAllPlayback();
+      playLiveSpeechFromTurn(target);
+    } else {
+      visualizer.jump(10);
+    }
+  });
 
   els.speedButtons.forEach(btn => {
     btn.addEventListener("click", () => {
       const speed = parseFloat(btn.getAttribute("data-speed-btn"));
+      state.playbackSpeed = speed;
       visualizer.setSpeed(speed);
       els.speedButtons.forEach(b => {
         b.classList.remove("bg-indigo-600", "text-white");
@@ -802,6 +1044,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
       btn.classList.add("bg-indigo-600", "text-white");
       btn.classList.remove("bg-slate-800", "text-slate-300");
+      if (state.liveSpeechMode && state.isPlaying) {
+        const cur = state.liveTurnIndex;
+        stopAllPlayback();
+        playLiveSpeechFromTurn(cur);
+      }
     });
   });
 
@@ -817,7 +1064,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Download Master WAV
   els.btnDownloadWav.addEventListener("click", () => {
-    if (!state.currentMasterBlob) return;
+    if (!state.currentMasterBlob) {
+      showErrorBanner(
+        "WAV Download Requires Cloud Studio Synthesis\n\n" +
+        "Browser Voices stream real speech directly to your speakers (browsers do not allow saving live OS speech to .WAV).\n\n" +
+        "To download .WAV files: Enable Billing on Google Cloud Project #283371616265 (Free 1M chars/mo) and select 'Google Cloud'."
+      );
+      return;
+    }
     const filename = `${sanitizeFilename(state.currentSubject.code)}_${sanitizeFilename(state.currentTopic)}.wav`;
     downloadBlob(state.currentMasterBlob, filename);
   });

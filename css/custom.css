@@ -91,3 +91,24 @@ code, pre, .font-mono {
   transform: scale(1);
   transition: opacity 0.2s ease-out, transform 0.2s ease-out;
 }
+
+/* Live Equalizer Bars for Browser Voice Mode */
+@keyframes eqBounce {
+  0%, 100% { transform: scaleY(0.25); }
+  50% { transform: scaleY(1); }
+}
+
+.eq-bar {
+  transform-origin: bottom;
+  animation: eqBounce 0.75s ease-in-out infinite;
+}
+.eq-bar:nth-child(2) { animation-delay: 0.15s; }
+.eq-bar:nth-child(3) { animation-delay: 0.3s; }
+.eq-bar:nth-child(4) { animation-delay: 0.45s; }
+.eq-bar:nth-child(5) { animation-delay: 0.2s; }
+
+/* Subtle glass card glow */
+.studio-card {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92) 0%, rgba(15, 23, 42, 0.78) 100%);
+  backdrop-filter: blur(10px);
+}

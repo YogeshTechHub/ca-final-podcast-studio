@@ -168,14 +168,17 @@ class DialogueParser {
    * @returns {Array<string>} Array of chunked strings
    */
   static _chunkAtPunctuation(text, maxChars = 400) {
-    if (text.length <= maxChars) return [text];
+    if (!text || typeof text !== "string") return [];
+    const effectiveMax = Math.max(50, Number(maxChars) || 400);
+    const trimmed = text.trim();
+    if (trimmed.length <= effectiveMax) return [trimmed];
 
     const chunks = [];
-    let remaining = text.trim();
+    let remaining = trimmed;
 
-    while (remaining.length > maxChars) {
+    while (remaining.length > effectiveMax) {
       // Look for sentence-ending punctuation closest to maxChars
-      const candidateSub = remaining.slice(0, maxChars);
+      const candidateSub = remaining.slice(0, effectiveMax);
       let splitIdx = -1;
 
       // Primary delimiters: . ! ? ;
@@ -186,7 +189,7 @@ class DialogueParser {
       }
 
       // Secondary delimiters: , :
-      if (splitIdx === -1 || splitIdx < maxChars * 0.4) {
+      if (splitIdx === -1 || splitIdx < effectiveMax * 0.4) {
         const secondaryRegex = /[,:]\s+/g;
         while ((match = secondaryRegex.exec(candidateSub)) !== null) {
           splitIdx = match.index + match[0].length;
@@ -194,13 +197,13 @@ class DialogueParser {
       }
 
       // Fallback delimiter: space
-      if (splitIdx === -1 || splitIdx < maxChars * 0.4) {
+      if (splitIdx === -1 || splitIdx < effectiveMax * 0.4) {
         splitIdx = candidateSub.lastIndexOf(" ");
       }
 
       // Hard break if no delimiter found
       if (splitIdx === -1 || splitIdx === 0) {
-        splitIdx = maxChars;
+        splitIdx = effectiveMax;
       }
 
       const chunk = remaining.slice(0, splitIdx).trim();

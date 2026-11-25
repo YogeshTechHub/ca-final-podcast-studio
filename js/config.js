@@ -76,8 +76,8 @@ const APP_CONFIG = {
     ENGINE_2_HF_PARLER: {
       id: "hf_parler",
       name: "AI4Bharat Parler-TTS",
-      badge: "ZeroGPU Express",
-      description: "AI4Bharat 1B Parler-TTS on Hugging Face ZeroGPU. Rich regional Tanglish cadence in single batch.",
+      badge: "Custom HF Space",
+      description: "AI4Bharat Parler-TTS on Hugging Face. Note: Public Space is paused; duplicate to your own HF Space & paste URL in Settings.",
       defaultSpaceUrl: "https://ai4bharat-indic-parler-tts.hf.space",
       speaker1Prompt: "A young female Indian student speaking in an expressive, curious Tanglish tone, close microphone, studio audio.",
       speaker2Prompt: "A knowledgeable Indian male mentor speaking calmly in clear, authoritative Tanglish, studio quality."
@@ -85,17 +85,17 @@ const APP_CONFIG = {
     ENGINE_3_HF_INDICTTS: {
       id: "hf_indictts",
       name: "AI4Bharat Indic-TTS",
-      badge: "100% Free CPU",
-      description: "Lightweight FastSpeech2/VITS CPU Space. 100% unlimited, zero quota anxiety with turn streaming.",
-      defaultSpaceUrl: "https://ai4bharat-indic-tts-free.hf.space",
+      badge: "Custom Gradio Space",
+      description: "Connect your own Hugging Face Gradio Indic-TTS Space URL in Settings.",
+      defaultSpaceUrl: "",
       genderA: "female",
       genderB: "male"
     },
     ENGINE_DEMO_WEB_SPEECH: {
       id: "demo_web_speech",
-      name: "Browser Speech Demo",
-      badge: "Offline / Instant Test",
-      description: "Uses local browser voices. Zero API key needed - instant preview & waveform testing in 5 seconds.",
+      name: "Browser Voices (Free)",
+      badge: "100% Free · Ready Now",
+      description: "Speaks using real Indian/English voices built into Chrome & Edge. Zero API keys, zero billing.",
       voices: {
         speaker1: {
           name: "Meena (Student)",
