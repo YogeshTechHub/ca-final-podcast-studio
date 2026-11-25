@@ -31,6 +31,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     liveTurnIndex: 0,
     liveSpeechSessionId: 0,
     playbackSpeed: 1.0,
+    voiceLang: localStorage.getItem("ca_studio_voice_lang") || "all",
     voice1Name: "",
     voice2Name: "",
     pauseMs: StorageManager.getSettings().pauseMs,
@@ -48,6 +49,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     soloVoiceOptions: document.getElementById("soloVoiceOptions"),
     soloVoiceSelect: document.getElementById("soloVoiceSelect"),
     browserVoiceBar: document.getElementById("browserVoiceBar"),
+    voiceLangFilter: document.getElementById("voiceLangFilter"),
+    voiceAvailabilityTip: document.getElementById("voiceAvailabilityTip"),
     voiceSelect1: document.getElementById("voiceSelect1"),
     voiceSelect2: document.getElementById("voiceSelect2"),
     btnTestVoices: document.getElementById("btnTestVoices"),
@@ -143,24 +146,101 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function populateBrowserVoices() {
     if (!els.voiceSelect1 || !els.voiceSelect2 || typeof engineManager.getSortedWebVoices !== "function") return;
-    const voices = engineManager.getSortedWebVoices();
-    if (!voices || voices.length === 0) {
+    if (els.voiceLangFilter) els.voiceLangFilter.value = state.voiceLang || "all";
+
+    const allVoices = engineManager.getSortedWebVoices();
+    if (!allVoices || allVoices.length === 0) {
       els.voiceSelect1.innerHTML = `<option value="">Default Browser Voice</option>`;
       els.voiceSelect2.innerHTML = `<option value="">Default Browser Voice</option>`;
       return;
     }
 
-    const best1 = engineManager.findBestWebVoice("speaker1", "English");
-    const best2 = engineManager.findBestWebVoice("speaker2", "English");
+    const langFilter = state.voiceLang || "all";
+    const matchLang = (v, target) => {
+      const l = (v.lang || "").toLowerCase().replace("_", "-");
+      const t = target.toLowerCase();
+      if (t === "ta-in") return l.startsWith("ta");
+      if (t === "hi-in") return l.startsWith("hi");
+      return l === t || l.startsWith(t);
+    };
 
-    const buildOptions = (selectedVoice) => voices.map(v => {
-      const sel = selectedVoice && v.name === selectedVoice.name ? "selected" : "";
-      const tag = v.lang ? ` [${v.lang}]` : "";
-      return `<option value="${escapeHtml(v.name)}" ${sel}>${escapeHtml(v.name)}${escapeHtml(tag)}</option>`;
-    }).join("");
+    let filteredVoices = langFilter === "all"
+      ? allVoices
+      : allVoices.filter(v => matchLang(v, langFilter));
 
-    els.voiceSelect1.innerHTML = buildOptions(best1);
-    els.voiceSelect2.innerHTML = buildOptions(best2);
+    // Show helpful tip if the selected accent isn't installed in this browser
+    if (els.voiceAvailabilityTip) {
+      const langNames = {
+        "en-IN": "English (India)",
+        "ta-IN": "Tamil (ta-IN)",
+        "en-GB": "British English (en-GB)",
+        "en-US": "US English (en-US)",
+        "hi-IN": "Hindi (hi-IN)"
+      };
+      if (langFilter !== "all" && filteredVoices.length === 0) {
+        els.voiceAvailabilityTip.innerHTML =
+          `No <strong>${langNames[langFilter] || langFilter}</strong> voice is installed in this browser yet (showing all available voices below). ` +
+          `<strong>Tip:</strong> Open this page in <strong>Microsoft Edge</strong> for free built-in Natural Indian (Neerja/Prabhat), Tamil (Pallavi/Valluvar) &amp; British (Libby/Ryan) voices!`;
+        els.voiceAvailabilityTip.classList.remove("hidden");
+        filteredVoices = allVoices;
+      } else if (langFilter === "all" && !allVoices.some(v => matchLang(v, "en-IN") || matchLang(v, "ta-IN") || matchLang(v, "en-GB"))) {
+        els.voiceAvailabilityTip.innerHTML =
+          `Only US English voices detected in this browser. For free <strong>Tamil, English (India) &amp; British English</strong> natural voices, try opening this studio in <strong>Microsoft Edge</strong>!`;
+        els.voiceAvailabilityTip.classList.remove("hidden");
+      } else {
+        els.voiceAvailabilityTip.classList.add("hidden");
+      }
+    }
+
+    // Pick best female/male from filteredVoices
+    const pickGender = (list, isFemale) => {
+      const femaleKw = ["female", "neerja", "heera", "pallavi", "libby", "sonia", "hazel", "susan", "zira", "samantha", "veena", "swara", "kalpana"];
+      const maleKw = ["male", "prabhat", "ravi", "valluvar", "ryan", "george", "daniel", "david", "mark", "rishi", "madhur", "hemant"];
+      const kw = isFemale ? femaleKw : maleKw;
+      return list.find(v => kw.some(k => v.name.toLowerCase().includes(k)))
+        || (isFemale ? list[0] : (list[1] || list[0]));
+    };
+
+    const best1 = langFilter === "all"
+      ? engineManager.findBestWebVoice("speaker1", "English")
+      : pickGender(filteredVoices, true);
+    const best2 = langFilter === "all"
+      ? engineManager.findBestWebVoice("speaker2", "English")
+      : pickGender(filteredVoices, false);
+
+    // Group voices cleanly by Accent / Language
+    const buildGroupedOptions = (list, selectedVoice) => {
+      const groups = [
+        { label: "🇮🇳 English (India)", test: v => (v.lang || "").toLowerCase().startsWith("en-in") },
+        { label: "🇮🇳 Tamil", test: v => (v.lang || "").toLowerCase().startsWith("ta") },
+        { label: "🇬🇧 British English", test: v => (v.lang || "").toLowerCase().startsWith("en-gb") },
+        { label: "🇺🇸 US English", test: v => (v.lang || "").toLowerCase().startsWith("en-us") },
+        { label: "🇮🇳 Hindi", test: v => (v.lang || "").toLowerCase().startsWith("hi") }
+      ];
+      const used = new Set();
+      let html = "";
+      groups.forEach(g => {
+        const items = list.filter(v => !used.has(v.name) && g.test(v));
+        if (items.length > 0) {
+          html += `<optgroup label="${g.label}">` + items.map(v => {
+            used.add(v.name);
+            const sel = selectedVoice && v.name === selectedVoice.name ? "selected" : "";
+            return `<option value="${escapeHtml(v.name)}" ${sel}>${escapeHtml(v.name)} [${escapeHtml(v.lang)}]</option>`;
+          }).join("") + `</optgroup>`;
+        }
+      });
+      const others = list.filter(v => !used.has(v.name));
+      if (others.length > 0) {
+        html += `<optgroup label="🌐 Other Voices">` + others.map(v => {
+          const sel = selectedVoice && v.name === selectedVoice.name ? "selected" : "";
+          return `<option value="${escapeHtml(v.name)}" ${sel}>${escapeHtml(v.name)} [${escapeHtml(v.lang)}]</option>`;
+        }).join("") + `</optgroup>`;
+      }
+      return html;
+    };
+
+    els.voiceSelect1.innerHTML = buildGroupedOptions(filteredVoices, best1);
+    els.voiceSelect2.innerHTML = buildGroupedOptions(filteredVoices, best2);
     state.voice1Name = els.voiceSelect1.value;
     state.voice2Name = els.voiceSelect2.value;
   }
@@ -638,6 +718,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const textToSpeak = turn.processedText || turn.rawText;
       const result = await engineManager.speakWebSpeech(textToSpeak, turn.speaker, {
         voiceName: selectedVoice,
+        lang: state.voiceLang,
         speedMultiplier: state.playbackSpeed
       });
 
@@ -989,8 +1070,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       stopAllPlayback();
       const v1 = els.voiceSelect1 ? els.voiceSelect1.value : "";
       const v2 = els.voiceSelect2 ? els.voiceSelect2.value : "";
-      await engineManager.speakWebSpeech("Hi Anna, ready for CA Final revision!", "speaker1", { voiceName: v1 });
-      await engineManager.speakWebSpeech("Yes Meena, let's master this topic step by step.", "speaker2", { voiceName: v2 });
+      await engineManager.speakWebSpeech("Hi Anna, ready for CA Final revision!", "speaker1", { voiceName: v1, lang: state.voiceLang });
+      await engineManager.speakWebSpeech("Yes Meena, let's master this topic step by step.", "speaker2", { voiceName: v2, lang: state.voiceLang });
+    });
+  }
+  if (els.voiceLangFilter) {
+    els.voiceLangFilter.addEventListener("change", (e) => {
+      state.voiceLang = e.target.value;
+      localStorage.setItem("ca_studio_voice_lang", state.voiceLang);
+      populateBrowserVoices();
     });
   }
   if (els.voiceSelect1) {

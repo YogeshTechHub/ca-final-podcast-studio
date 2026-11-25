@@ -760,6 +760,11 @@ class TTSEngineManager {
         const utterance = new SpeechSynthesisUtterance(chunkText);
         
         if (voice) utterance.voice = voice;
+        if (options.lang && options.lang !== "all") {
+          utterance.lang = options.lang;
+        } else if (voice && voice.lang) {
+          utterance.lang = voice.lang;
+        }
         utterance.rate = rate;
         utterance.pitch = pitch;
 
